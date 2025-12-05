@@ -18,35 +18,76 @@ A sophisticated RAG (Retrieval-Augmented Generation) system that enables intelli
 
 ### System Overview
 
+### System Overview
+
 ```
-┌─────────────┐
-│  PDF Files  │
-└──────┬──────┘
-       │
-       ▼
-┌─────────────────────────────┐
-│  PDF Processing Pipeline    │
-│  • Text Extraction          │
-│  • Image Extraction         │
-│  • Table Extraction         │
-│  • Vision-based Captioning  │
-└──────┬──────────────────────┘
-       │
-       ▼
-┌─────────────────────────────┐
-│  ChromaDB Vector Store      │
-│  • Text Chunks (embedded)   │
-│  • Image Captions (embedded)│
-│  • Table Previews (embedded)│
-│  • Metadata & File Paths    │
-└──────┬──────────────────────┘
-       │
-       ├─────────────┬──────────────┐
-       ▼             ▼              ▼
-┌─────────────┐ ┌─────────┐ ┌─────────────┐
-│   Standard  │ │  Agent  │ │  Streamlit  │
-│   Search    │ │   Mode  │ │  Interface  │
-└─────────────┘ └─────────┘ └─────────────┘
+                    ┌───────────────────────────────┐
+                    │      PDF Documents            │
+                    │    (pdf_files/*.pdf)          │
+                    └──────────────┬────────────────┘
+                                   │
+                    ┌──────────────▼────────────────┐
+                    │   PDF Processing Pipeline     │
+                    ├───────────────────────────────┤
+                    │  📄 Text Extraction           │
+                    │     └─► PDFPlumber            │
+                    │  🖼️  Image Extraction          │
+                    │     └─► PyMuPDF (fitz)        │
+                    │  📊 Table Extraction          │
+                    │     └─► PDFPlumber + Pandas   │
+                    │  🤖 Image Captioning          │
+                    │     └─► qwen3-vl:8b (Vision)  │
+                    └──────────────┬────────────────┘
+                                   │
+                    ┌──────────────▼────────────────┐
+                    │   Embedding Generation        │
+                    │   (qwen3-embedding:latest)    │
+                    └──────────────┬────────────────┘
+                                   │
+                    ┌──────────────▼────────────────┐
+                    │    ChromaDB Vector Store      │
+                    │       (chroma_db/)            │
+                    ├───────────────────────────────┤
+                    │  • Text chunks + embeddings   │
+                    │  • Image captions + embeddings│
+                    │  • Table data + embeddings    │
+                    │  • Metadata & file references │
+                    │  • Source document tracking   │
+                    └──────────────┬────────────────┘
+                                   │
+            ┌──────────────────────┴──────────────────────┐
+            │                                             │
+┌───────────▼──────────┐                     ┌────────────▼────────────┐
+│   Standard Search    │                     │     Agent Mode          │
+│      (RAG Query)     │                     │  (LangChain ReAct)      │
+├──────────────────────┤                     ├─────────────────────────┤
+│ • Semantic search    │                     │ 🧠 Reasoning Engine     │
+│ • Multi-type results │                     │ 🔧 Tool Selection:      │
+│ • Direct retrieval   │                     │   • standard_search     │
+│ • Optional LLM       │                     │   • get_overview        │
+│                      │                     │   • summarize_document  │
+│                      │                     │ 💬 Conversation Memory  │
+│                      │                     │ 🎯 Relevance Filtering  │
+└──────────┬───────────┘                     └────────────┬────────────┘
+           │                                              │
+           └──────────────────┬───────────────────────────┘
+                              │
+                   ┌──────────▼──────────┐
+                   │  Answer Generation  │
+                   │   (gpt-oss:20b)     │
+                   └──────────┬──────────┘
+                              │
+                   ┌──────────▼──────────┐
+                   │  Streamlit Web UI   │
+                   │  (localhost:8501)   │
+                   ├─────────────────────┤
+                   │  • Query interface  │
+                   │  • Result display   │
+                   │  • Image gallery    │
+                   │  • Table viewer     │
+                   │  • PDF management   │
+                   │  • Settings panel   │
+                   └─────────────────────┘
 ```
 
 ### Query Flow
@@ -176,24 +217,6 @@ streamlit run src/app.py
 
 The web interface will open at `http://localhost:8501`
 
-### Query Modes
-
-#### 🔍 Standard Search Mode
-Direct vector similarity search with customizable results:
-- Adjust number of text/image/table results with sliders
-- Optional LLM answer generation
-- View results in organized tabs
-
-#### 🤖 Agent Mode
-Intelligent agent that autonomously decides which tools to use:
-- **standard_search**: Search across all content types
-- **get_overview**: List available documents
-- **summarize_document**: Get document summaries
-
-Features:
-- Conversation memory (remembers previous queries)
-- Step-by-step reasoning display
-- Automatic relevance filtering
 
 ### Example Queries
 
@@ -201,7 +224,7 @@ Features:
 "What are the installation instructions?"
 "List all available documents"
 "How do I configure the BIOS settings?"
-"Summarize the user manual"
+"Summarize the file xyz"
 ```
 
 ### Web Interface Features
@@ -286,26 +309,6 @@ AI-DocumentAnalyzer/
 
 ## 🔧 Advanced Usage
 
-### Python API
-
-```python
-from src.rag_backend import build_vector_db, retriever, query_by_type
-from src.agent import query_with_agent
-
-# Build vector database
-build_vector_db(text_chunks, image_data, table_data, image_captions)
-
-# Standard retrieval
-docs = retriever().invoke("your query")
-
-# Type-specific query
-images = query_by_type("query", doc_type="image", k=3)
-tables = query_by_type("query", doc_type="table", k=3)
-
-# Agent query
-result = query_with_agent("your question")
-```
-
 ### Database Management
 
 ```bash
@@ -341,23 +344,11 @@ OLLAMA_TIMEOUT = 300   # Increase timeout if needed
 python src/app.py  # Select option 1
 ```
 
-**Problem**: Image captioning too slow
-```python
-# Solution: Increase delay or skip more images
-CAPTION_RATE_LIMIT_DELAY = 2.0
-MIN_IMAGE_SIZE = 5000
-```
-
 **Problem**: Agent not using correct tool
 - The agent uses LangGraph's ReAct agent with tool calling
 - Check system instructions in `src/agent.py` → `_get_system_instructions()`
 - Ensure your query clearly indicates what you want (search, overview, or summary)
 
-**Problem**: ImportError or module not found
-```bash
-# Solution: Ensure virtual environment is activated
-source .venv_da/bin/activate  # Linux/Mac
-.venv_da\Scripts\activate     # Windows
 
 # Reinstall dependencies if needed
 pip install -r requirements.txt
@@ -370,26 +361,6 @@ pip install -r requirements.txt
 - **Image Quality**: Low-resolution images may produce poor captions
 - **Memory Usage**: Processing many images simultaneously can consume significant RAM
 - **Model Availability**: Requires Ollama models to be pre-downloaded locally
-
-## 🔮 Future Improvements
-
-Potential enhancements for future versions:
-- [ ] Support for additional document formats (DOCX, PPTX, HTML)
-- [ ] Batch processing for multiple documents
-- [ ] Export functionality for search results
-- [ ] Advanced table parsing with structure preservation
-- [ ] Multi-language support for non-English documents
-- [ ] Cloud deployment options (Docker, Kubernetes)
-- [ ] API endpoint for programmatic access
-- [ ] Citation tracking for answer sources
-
-## 🙏 Acknowledgments
-
-- **LangChain**: Powerful LLM framework
-- **ChromaDB**: Efficient vector database
-- **Ollama**: Local LLM inference
-- **Streamlit**: Easy web interface creation
-- **PDFPlumber & PyMuPDF**: Excellent PDF processing libraries
 
 ---
 
